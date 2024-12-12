@@ -16,16 +16,11 @@ Including another URLconf
 
 from django.contrib import admin
 from django.urls import path, include
+from robots.views import RobotCreateView
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('robots.urls')),  # убираем префикс robots/
-]
-
-# robots/urls.py
-from django.urls import path
-from robots.views import RobotCreateView
-
-urlpatterns = [
-    path('robots/api/', RobotCreateView.as_view(), name='robot-create'),  # полный путь здесь
+    path('', include('robots.urls')),
+    path('robots/api/', RobotCreateView.as_view(), name='robot-create'),
 ]
