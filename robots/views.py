@@ -1,9 +1,12 @@
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
+from django.db.models import Count
+from django.utils import timezone
+from openpyxl import Workbook
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from .models import Robot
 
 @method_decorator(csrf_exempt, name='dispatch')
@@ -61,3 +64,82 @@ class RobotCreateView(View):
                 {'error': str(e)}, 
                 status=500
             )
+        
+
+class RobotExcelReportView(View):
+    """Представление для генерации Excel-отчета по роботам"""
+    
+    def get_last_week_data(self):
+        """Получаем данные за последнюю неделю"""
+        end_date = timezone.now()
+        start_date = end_date - timedelta(days=7)
+        
+        return Robot.objects.filter(
+            created__range=(start_date, end_date)
+        ).values(
+            'model', 'version'
+        ).annotate(
+            count=Count('id')
+        ).order_by('model', 'version')
+
+    def get(self, request, *args, **kwargs):
+        """Обработка GET-запроса для скачивания отчета"""
+        # Создаем новый Excel-файл
+        wb = Workbook()
+        
+        # Получаем данные за последнюю неделю
+        robots_data = self.get_last_week_data()
+        
+        # Группируем данные по моделям
+        models_data = {}
+        for item in robots_data:
+            if item['model'] not in models_data:
+                models_data[item['model']] = []
+            models_data[item['model']].append(item)
+        
+        # Удаляем стандартный лист
+        if len(models_data) > 0:
+            wb.remove(wb.active)
+        
+        # Создаем лист для каждой модели
+        for model, data in models_data.items():
+            # Создаем новый лист с названием модели
+            ws = wb.create_sheet(title=f"Model {model}")
+            
+            # Добавляем заголовки
+            ws['A1'] = 'Модель'
+            ws['B1'] = 'Версия'
+            ws['C1'] = 'Количество за неделю'
+            
+            # Заполняем данные
+            row = 2
+            for item in data:
+                ws[f'A{row}'] = item['model']
+                ws[f'B{row}'] = item['version']
+                ws[f'C{row}'] = item['count']
+                row += 1
+            
+            # Устанавливаем ширину столбцов
+            ws.column_dimensions['A'].width = 15
+            ws.column_dimensions['B'].width = 15
+            ws.column_dimensions['C'].width = 25
+        else:
+            # Если данных нет, оставляем один лист с сообщением
+            ws = wb.active
+            ws['A1'] = 'Нет данных за последнюю неделю'
+            ws.column_dimensions['A'].width = 30
+
+        # Формируем имя файла с текущей датой
+        filename = f'robots_report_{timezone.now().strftime("%Y%m%d")}.xlsx'
+        
+        # Создаем HTTP-ответ с Excel-файлом
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        # Сохраняем файл в response
+        wb.save(response)
+        
+        return response
+

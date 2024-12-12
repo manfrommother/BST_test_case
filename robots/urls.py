@@ -1,6 +1,8 @@
 from django.urls import path
-from .views import RobotCreateView
+from .views import RobotCreateView, RobotExcelReportView
+
 
 urlpatterns = [
-    path('api/robots/', RobotCreateView.as_view(), name='robot-create'),
+    path('report/download/', RobotExcelReportView.as_view(), name='robot-report'),
+    path('robots/api/', RobotCreateView.as_view(), name='robot-create'),
 ]
