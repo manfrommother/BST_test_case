@@ -1,7 +1,10 @@
 from django.test import TestCase, Client
 from django.urls import reverse
 from django.utils import timezone
+from django.core import mail
 from .models import Robot
+from customers.models import Customer
+from orders.models import Order
 import json
 from datetime import timedelta
 
@@ -117,3 +120,65 @@ class RobotReportTests(TestCase):
             response['Content-Type'],
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
+
+
+class RobotNotificationTests(TestCase):
+    def setUp(self):
+        # Создаем клиента
+        self.customer = Customer.objects.create(
+            email='customer@example.com'
+        )
+        
+        # Создаем ожидающий заказ
+        self.order = Order.objects.create(
+            customer=self.customer,
+            robot_serial='R2-D2',
+            status=Order.PENDING
+        )
+
+    def test_customer_notification(self):
+        """Тест отправки уведомления при появлении робота"""
+        # Создаем робота, который соответствует заказу
+        Robot.objects.create(
+            model='R2',
+            version='D2',
+            created=timezone.now()
+        )
+        
+        # Проверяем, что письмо отправлено
+        self.assertEqual(len(mail.outbox), 1)
+        sent_mail = mail.outbox[0]
+        
+        # Проверяем содержимое письма
+        self.assertEqual(sent_mail.subject, 'Робот доступен к заказу')
+        self.assertEqual(sent_mail.to, ['customer@example.com'])
+        self.assertIn('R2', sent_mail.body)
+        self.assertIn('D2', sent_mail.body)
+
+    def test_no_notification_for_different_robot(self):
+        """Тест отсутствия уведомления при создании другого робота"""
+        # Создаем робота другой модели
+        Robot.objects.create(
+            model='X5',
+            version='LT',
+            created=timezone.now()
+        )
+        
+        # Проверяем, что письмо не отправлено
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_no_notification_for_completed_order(self):
+        """Тест отсутствия уведомления для завершенного заказа"""
+        # Меняем статус заказа на завершенный
+        self.order.status = Order.COMPLETED
+        self.order.save()
+        
+        # Создаем соответствующего робота
+        Robot.objects.create(
+            model='R2',
+            version='D2',
+            created=timezone.now()
+        )
+        
+        # Проверяем, что письмо не отправлено
+        self.assertEqual(len(mail.outbox), 0)
